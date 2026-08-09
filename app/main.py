@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,4 +34,22 @@ def home():
 def health():
     return {
         "status": "healthy"
+    }
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/login")
+def login(data: LoginRequest):
+
+    if data.username == "admin" and data.password == "admin123":
+        return {
+            "success": True,
+            "message": "Login successful"
+        }
+
+    return {
+        "success": False,
+        "message": "Invalid username or password"
     }

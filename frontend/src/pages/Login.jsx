@@ -1,20 +1,35 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import api from "../services/api";
 
 function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
-  e.preventDefault();
+  const handleLogin = async (e) => {
+    e.preventDefault();
 
-  if (username === "admin" && password === "admin123") {
-    navigate("/dashboard");
-  } else {
-    alert("Invalid username or password");
-  }
-};
+    setError("");
+
+    try {
+      const response = await api.post("/login", {
+        username: username,
+        password: password,
+      });
+
+      if (response.data.success) {
+        navigate("/dashboard");
+      } else {
+        setError(response.data.message);
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      setError("Unable to connect to backend");
+    }
+  };
 
   return (
     <div
@@ -36,7 +51,9 @@ function Login() {
           color: "white",
         }}
       >
-        <h1 style={{ textAlign: "center" }}>VisionEdge</h1>
+        <h1 style={{ textAlign: "center" }}>
+          VisionEdge
+        </h1>
 
         <h3 style={{ textAlign: "center" }}>
           AI Surveillance Login
@@ -58,7 +75,19 @@ function Login() {
           style={inputStyle}
         />
 
-        <button style={buttonStyle}>
+        {error && (
+          <p
+            style={{
+              color: "#f87171",
+              textAlign: "center",
+              marginTop: "15px",
+            }}
+          >
+            {error}
+          </p>
+        )}
+
+        <button type="submit" style={buttonStyle}>
           Login
         </button>
       </form>
@@ -71,6 +100,7 @@ const inputStyle = {
   padding: "12px",
   marginTop: "15px",
   borderRadius: "5px",
+  boxSizing: "border-box",
 };
 
 const buttonStyle = {
