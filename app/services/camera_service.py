@@ -6,18 +6,19 @@ from ultralytics import YOLO
 
 class CameraService:
 
-    def __init__(self, video_path: str):
+    def __init__(self, video_path):
+
         self.video_path = video_path
 
-        # ---------------------------------------------------------
+        # --------------------------------------------------
         # YOLO MODEL
-        # ---------------------------------------------------------
+        # --------------------------------------------------
 
         self.model = YOLO("yolov8n.pt")
 
-        # ---------------------------------------------------------
+        # --------------------------------------------------
         # VIDEO
-        # ---------------------------------------------------------
+        # --------------------------------------------------
 
         self.camera = cv2.VideoCapture(self.video_path)
 
@@ -26,59 +27,97 @@ class CameraService:
                 f"Unable to open video: {self.video_path}"
             )
 
-        # ---------------------------------------------------------
+        # --------------------------------------------------
         # PROCESSING STATE
-        # ---------------------------------------------------------
+        # --------------------------------------------------
 
         self.running = False
         self.stop_requested = False
 
-        # ---------------------------------------------------------
+        # Background processing thread
+        self.processing_thread = None
+
+        # --------------------------------------------------
         # LIVE STATISTICS
-        # ---------------------------------------------------------
+        # --------------------------------------------------
 
         self.fps = 0.0
         self.objects_detected = 0
 
-        # ---------------------------------------------------------
+        # --------------------------------------------------
         # LATEST PROCESSED FRAME
-        # ---------------------------------------------------------
+        # --------------------------------------------------
 
         self.latest_frame = None
 
-        # ---------------------------------------------------------
-        # THREAD SAFETY
-        # ---------------------------------------------------------
+        # Lock prevents simultaneous access to frame
+        self.frame_lock = threading.Lock()
 
-        self.lock = threading.Lock()
+        # --------------------------------------------------
+        # PERFORMANCE SETTINGS
+        # --------------------------------------------------
 
-    # =============================================================
-    # START ANALYSIS
-    # =============================================================
+        # YOLO processes a smaller image.
+        # This greatly improves CPU performance.
+        self.inference_width = 640
+
+        # Process every Nth frame.
+        #
+        # 1 = every frame
+        # 2 = every second frame
+        # 3 = every third frame
+        #
+        # We start with 2.
+        self.frame_skip = 2
+
+    # ======================================================
+    # START
+    # ======================================================
 
     def start(self):
         """
-        Process the selected video using YOLO.
+        Start video analysis in a background thread.
         """
 
-        self.running = True
-        self.stop_requested = False
+        # Prevent starting multiple threads
+        if self.running:
+            return
 
-        previous_time = time.perf_counter()
+        self.stop_requested = False
+        self.running = True
+
+        self.processing_thread = threading.Thread(
+            target=self._process_video,
+            daemon=True
+        )
+
+        self.processing_thread.start()
+
+    # ======================================================
+    # VIDEO PROCESSING
+    # ======================================================
+
+    def _process_video(self):
+
+        frame_counter = 0
+
+        # FPS measurement
+        fps_start_time = time.perf_counter()
+        processed_frames = 0
 
         try:
 
             while not self.stop_requested:
 
+                # --------------------------------------------------
+                # READ FRAME
+                # --------------------------------------------------
+
                 success, frame = self.camera.read()
 
-                # -------------------------------------------------
-                # VIDEO REACHED END
-                # -------------------------------------------------
-
+                # Restart video when it reaches the end
                 if not success:
 
-                    # Restart video from beginning
                     self.camera.set(
                         cv2.CAP_PROP_POS_FRAMES,
                         0
@@ -86,95 +125,108 @@ class CameraService:
 
                     continue
 
-                # -------------------------------------------------
-                # YOLO DETECTION
-                # -------------------------------------------------
+                frame_counter += 1
 
-                results = self.model(
-                    frame,
-                    verbose=False
-                )
+                # --------------------------------------------------
+                # FRAME SKIPPING
+                # --------------------------------------------------
 
-                result = results[0]
+                if frame_counter % self.frame_skip != 0:
 
-                # -------------------------------------------------
-                # OBJECT COUNT
-                # -------------------------------------------------
+                    continue
 
-                object_count = 0
+                # --------------------------------------------------
+                # RESIZE FRAME
+                # --------------------------------------------------
 
-                if result.boxes is not None:
-                    object_count = len(
-                        result.boxes
+                height, width = frame.shape[:2]
+
+                if width > self.inference_width:
+
+                    scale = (
+                        self.inference_width / width
                     )
 
-                # -------------------------------------------------
-                # ANNOTATED FRAME
-                # -------------------------------------------------
+                    new_width = self.inference_width
 
-                annotated_frame = result.plot()
+                    new_height = int(
+                        height * scale
+                    )
 
-                # -------------------------------------------------
-                # FPS
-                # -------------------------------------------------
-
-                current_time = time.perf_counter()
-
-                elapsed_time = (
-                    current_time - previous_time
-                )
-
-                if elapsed_time > 0:
-
-                    current_fps = (
-                        1.0 / elapsed_time
+                    frame_for_detection = cv2.resize(
+                        frame,
+                        (
+                            new_width,
+                            new_height
+                        )
                     )
 
                 else:
 
-                    current_fps = 0.0
+                    frame_for_detection = frame
 
-                previous_time = current_time
+                # --------------------------------------------------
+                # YOLO DETECTION
+                # --------------------------------------------------
 
-                # -------------------------------------------------
-                # SMOOTH FPS
-                # -------------------------------------------------
+                results = self.model(
+                    frame_for_detection,
+                    verbose=False
+                )
 
-                with self.lock:
+                # --------------------------------------------------
+                # OBJECT COUNT
+                # --------------------------------------------------
 
-                    if self.fps == 0:
+                self.objects_detected = len(
+                    results[0].boxes
+                )
 
-                        self.fps = current_fps
+                # --------------------------------------------------
+                # DRAW DETECTIONS
+                # --------------------------------------------------
 
-                    else:
+                annotated_frame = results[0].plot()
 
-                        self.fps = (
-                            self.fps * 0.8
-                            + current_fps * 0.2
-                        )
+                # --------------------------------------------------
+                # FPS CALCULATION
+                # --------------------------------------------------
 
-                    self.objects_detected = (
-                        object_count
+                processed_frames += 1
+
+                current_time = time.perf_counter()
+
+                elapsed = (
+                    current_time - fps_start_time
+                )
+
+                if elapsed >= 1.0:
+
+                    self.fps = (
+                        processed_frames / elapsed
                     )
 
-                # -------------------------------------------------
-                # DRAW FPS
-                # -------------------------------------------------
+                    processed_frames = 0
+
+                    fps_start_time = current_time
+
+                # --------------------------------------------------
+                # DISPLAY FPS
+                # --------------------------------------------------
 
                 cv2.putText(
                     annotated_frame,
-                    f"FPS: {self.fps:.2f}",
+                    f"FPS: {self.fps:.1f}",
                     (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1,
                     (0, 255, 0),
-                    2,
-                    cv2.LINE_AA
+                    2
                 )
 
-                # -------------------------------------------------
-                # DRAW OBJECT COUNT
-                # -------------------------------------------------
+                # --------------------------------------------------
+                # DISPLAY OBJECT COUNT
+                # --------------------------------------------------
 
                 cv2.putText(
                     annotated_frame,
@@ -183,25 +235,16 @@ class CameraService:
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1,
                     (0, 255, 0),
-                    2,
-                    cv2.LINE_AA
+                    2
                 )
 
-                # -------------------------------------------------
-                # STORE LATEST FRAME
-                # -------------------------------------------------
+                # --------------------------------------------------
+                # STORE ONLY THE LATEST FRAME
+                # --------------------------------------------------
 
-                with self.lock:
+                with self.frame_lock:
 
-                    self.latest_frame = (
-                        annotated_frame.copy()
-                    )
-
-                # -------------------------------------------------
-                # SMALL DELAY
-                # -------------------------------------------------
-
-                time.sleep(0.001)
+                    self.latest_frame = annotated_frame.copy()
 
         except Exception as error:
 
@@ -213,52 +256,74 @@ class CameraService:
 
             self.running = False
 
-            self.camera.release()
+            self.fps = 0.0
 
-            print(
-                "Camera processing stopped."
-            )
+            self.objects_detected = 0
 
-    # =============================================================
-    # STOP ANALYSIS
-    # =============================================================
+    # ======================================================
+    # STOP
+    # ======================================================
 
     def stop(self):
 
         self.stop_requested = True
 
-    # =============================================================
+        if (
+            self.processing_thread
+            and self.processing_thread.is_alive()
+        ):
+
+            self.processing_thread.join(
+                timeout=2
+            )
+
+        self.running = False
+
+        self.fps = 0.0
+
+        self.objects_detected = 0
+
+        with self.frame_lock:
+
+            self.latest_frame = None
+
+        # Reset video to beginning
+        self.camera.set(
+            cv2.CAP_PROP_POS_FRAMES,
+            0
+        )
+
+    # ======================================================
     # GET LATEST FRAME
-    # =============================================================
+    # ======================================================
 
     def get_latest_frame(self):
 
-        with self.lock:
+        with self.frame_lock:
 
             if self.latest_frame is None:
+
                 return None
 
             return self.latest_frame.copy()
 
-    # =============================================================
-    # GET LIVE STATISTICS
-    # =============================================================
+    # ======================================================
+    # STATUS
+    # ======================================================
 
     def get_status(self):
 
-        with self.lock:
-
-            return {
-                "status": (
-                    "running"
-                    if self.running
-                    else "stopped"
-                ),
-                "fps": round(
-                    self.fps,
-                    2
-                ),
-                "objects_detected": (
-                    self.objects_detected
-                )
-            }
+        return {
+            "status": (
+                "running"
+                if self.running
+                else "stopped"
+            ),
+            "fps": round(
+                self.fps,
+                2
+            ),
+            "objects_detected": (
+                self.objects_detected
+            )
+        }
