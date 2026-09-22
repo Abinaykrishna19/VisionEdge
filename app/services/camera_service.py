@@ -10,27 +10,15 @@ class CameraService:
 
         self.video_path = video_path
 
-        # -----------------------------
-        # YOLO
-        # -----------------------------
         self.model = YOLO("yolov8n.pt")
 
-        # -----------------------------
-        # STATE
-        # -----------------------------
         self.running = False
         self.stop_requested = False
 
         self.processing_thread = None
 
-        # -----------------------------
-        # VIDEO
-        # -----------------------------
         self.camera = None
 
-        # -----------------------------
-        # LIVE DATA
-        # -----------------------------
         self.fps = 0.0
         self.objects_detected = 0
 
@@ -38,25 +26,15 @@ class CameraService:
 
         self.frame_lock = threading.Lock()
 
-        # -----------------------------
-        # PERFORMANCE
-        # -----------------------------
         self.inference_width = 640
 
-        # Process every 2nd frame
         self.frame_skip = 2
-
-    # =====================================================
-    # START
-    # =====================================================
 
     def start(self):
 
-        # Already running
         if self.running:
             return
 
-        # Open video fresh every time
         self.camera = cv2.VideoCapture(self.video_path)
 
         if not self.camera.isOpened():
@@ -80,10 +58,6 @@ class CameraService:
 
         self.processing_thread.start()
 
-    # =====================================================
-    # PROCESS VIDEO
-    # =====================================================
-
     def _process_video(self):
 
         frame_counter = 0
@@ -95,15 +69,10 @@ class CameraService:
 
             while not self.stop_requested:
 
-                # -----------------------------
-                # READ FRAME
-                # -----------------------------
-
                 success, frame = self.camera.read()
 
                 if not success:
 
-                    # Restart video
                     self.camera.set(
                         cv2.CAP_PROP_POS_FRAMES,
                         0
@@ -113,16 +82,8 @@ class CameraService:
 
                 frame_counter += 1
 
-                # -----------------------------
-                # FRAME SKIP
-                # -----------------------------
-
                 if frame_counter % self.frame_skip != 0:
                     continue
-
-                # -----------------------------
-                # RESIZE
-                # -----------------------------
 
                 height, width = frame.shape[:2]
 
@@ -143,10 +104,6 @@ class CameraService:
 
                     detection_frame = frame
 
-                # -----------------------------
-                # YOLO
-                # -----------------------------
-
                 results = self.model.predict(
                     detection_frame,
                     imgsz=640,
@@ -156,25 +113,13 @@ class CameraService:
 
                 result = results[0]
 
-                # -----------------------------
-                # OBJECT COUNT
-                # -----------------------------
-
                 self.objects_detected = (
                     len(result.boxes)
                     if result.boxes is not None
                     else 0
                 )
 
-                # -----------------------------
-                # DRAW
-                # -----------------------------
-
                 annotated_frame = result.plot()
-
-                # -----------------------------
-                # FPS
-                # -----------------------------
 
                 processed_frames += 1
 
@@ -190,10 +135,6 @@ class CameraService:
 
                     processed_frames = 0
                     fps_start = now
-
-                # -----------------------------
-                # DISPLAY
-                # -----------------------------
 
                 cv2.putText(
                     annotated_frame,
@@ -217,10 +158,6 @@ class CameraService:
                     cv2.LINE_AA
                 )
 
-                # -----------------------------
-                # SAVE LATEST FRAME
-                # -----------------------------
-
                 with self.frame_lock:
 
                     self.latest_frame = (
@@ -242,10 +179,6 @@ class CameraService:
                 self.camera.release()
 
                 self.camera = None
-
-    # =====================================================
-    # STOP
-    # =====================================================
 
     def stop(self):
 
@@ -271,10 +204,6 @@ class CameraService:
 
         self.processing_thread = None
 
-    # =====================================================
-    # GET FRAME
-    # =====================================================
-
     def get_latest_frame(self):
 
         with self.frame_lock:
@@ -283,10 +212,6 @@ class CameraService:
                 return None
 
             return self.latest_frame.copy()
-
-    # =====================================================
-    # STATUS
-    # =====================================================
 
     def get_status(self):
 

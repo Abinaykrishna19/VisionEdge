@@ -32,7 +32,7 @@ from app.services.camera_service import (
 app = FastAPI(
     title="VisionEdge API",
     description=(
-        "Hardware Accelerated "
+        "Hardware Accelerated "   
         "Video Analytics Platform"
     ),
     version="1.0.0",
