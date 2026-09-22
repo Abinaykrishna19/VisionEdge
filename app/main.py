@@ -25,23 +25,15 @@ from app.services.camera_service import (
 )
 
 
-# ================================================================
-# FASTAPI APPLICATION
-# ================================================================
-
 app = FastAPI(
     title="VisionEdge API",
     description=(
-        "Hardware Accelerated "   
+        "Hardware Accelerated "
         "Video Analytics Platform"
     ),
     version="1.0.0",
 )
 
-
-# ================================================================
-# CORS
-# ================================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,10 +49,6 @@ app.add_middleware(
 )
 
 
-# ================================================================
-# VIDEO DIRECTORY
-# ================================================================
-
 VIDEO_DIR = "videos"
 
 os.makedirs(
@@ -69,19 +57,11 @@ os.makedirs(
 )
 
 
-# ================================================================
-# GLOBAL CAMERA STATE
-# ================================================================
-
 camera_service = None
 camera_thread = None
 
 current_video_path = None
 
-
-# ================================================================
-# HOME
-# ================================================================
 
 @app.get("/")
 def home():
@@ -91,10 +71,6 @@ def home():
     }
 
 
-# ================================================================
-# HEALTH
-# ================================================================
-
 @app.get("/health")
 def health():
 
@@ -102,10 +78,6 @@ def health():
         "status": "healthy"
     }
 
-
-# ================================================================
-# CAMERA STATUS
-# ================================================================
 
 @app.get("/camera/status")
 def camera_status():
@@ -120,10 +92,6 @@ def camera_status():
         "model": "yolov8n.pt",
     }
 
-
-# ================================================================
-# LOGIN
-# ================================================================
 
 class LoginRequest(BaseModel):
 
@@ -152,10 +120,6 @@ def login(data: LoginRequest):
     }
 
 
-# ================================================================
-# VIDEO UPLOAD
-# ================================================================
-
 @app.post("/video/upload")
 async def upload_video(
     file: UploadFile = File(...)
@@ -173,10 +137,6 @@ async def upload_video(
                     "No video file selected."
                 ),
             }
-
-        # --------------------------------------------------------
-        # File extension
-        # --------------------------------------------------------
 
         filename = os.path.basename(
             file.filename
@@ -204,18 +164,10 @@ async def upload_video(
                 ),
             }
 
-        # --------------------------------------------------------
-        # Save path
-        # --------------------------------------------------------
-
         file_path = os.path.join(
             VIDEO_DIR,
             filename
         )
-
-        # --------------------------------------------------------
-        # Save file
-        # --------------------------------------------------------
 
         contents = await file.read()
 
@@ -227,10 +179,6 @@ async def upload_video(
             video_file.write(
                 contents
             )
-
-        # --------------------------------------------------------
-        # Store current video
-        # --------------------------------------------------------
 
         current_video_path = file_path
 
@@ -259,19 +207,11 @@ async def upload_video(
         }
 
 
-# ================================================================
-# START CAMERA / ANALYSIS
-# ================================================================
-
 @app.post("/camera/start")
 def start_camera():
 
     global camera_service
     global camera_thread
-
-    # ------------------------------------------------------------
-    # Check video
-    # ------------------------------------------------------------
 
     if not current_video_path:
 
@@ -281,10 +221,6 @@ def start_camera():
                 "Please upload a video first."
             ),
         }
-
-    # ------------------------------------------------------------
-    # Check existing camera
-    # ------------------------------------------------------------
 
     if (
         camera_thread is not None
@@ -297,10 +233,6 @@ def start_camera():
                 "Camera is already running."
             ),
         }
-
-    # ------------------------------------------------------------
-    # Create camera service
-    # ------------------------------------------------------------
 
     try:
 
@@ -320,20 +252,12 @@ def start_camera():
             "message": str(error),
         }
 
-    # ------------------------------------------------------------
-    # Start processing thread
-    # ------------------------------------------------------------
-
     camera_thread = threading.Thread(
         target=camera_service.start,
         daemon=True,
     )
 
     camera_thread.start()
-
-    # ------------------------------------------------------------
-    # Give the processing thread a moment
-    # ------------------------------------------------------------
 
     time.sleep(0.2)
 
@@ -345,10 +269,6 @@ def start_camera():
         "video": current_video_path,
     }
 
-
-# ================================================================
-# STOP CAMERA
-# ================================================================
 
 @app.post("/camera/stop")
 def stop_camera():
@@ -374,10 +294,6 @@ def stop_camera():
     }
 
 
-# ================================================================
-# LIVE CAMERA STATUS
-# ================================================================
-
 @app.get("/camera/live-status")
 def camera_live_status():
 
@@ -392,43 +308,23 @@ def camera_live_status():
     return camera_service.get_status()
 
 
-# ================================================================
-# VIDEO STREAM
-# ================================================================
-
 def generate_video_stream():
 
     while True:
-
-        # --------------------------------------------------------
-        # Camera service doesn't exist
-        # --------------------------------------------------------
 
         if camera_service is None:
 
             time.sleep(0.1)
             continue
 
-        # --------------------------------------------------------
-        # Get latest processed frame
-        # --------------------------------------------------------
-
         frame = (
             camera_service.get_latest_frame()
         )
-
-        # --------------------------------------------------------
-        # No frame available yet
-        # --------------------------------------------------------
 
         if frame is None:
 
             time.sleep(0.03)
             continue
-
-        # --------------------------------------------------------
-        # Encode frame as JPEG
-        # --------------------------------------------------------
 
         success, buffer = cv2.imencode(
             ".jpg",
@@ -447,10 +343,6 @@ def generate_video_stream():
 
         frame_bytes = buffer.tobytes()
 
-        # --------------------------------------------------------
-        # MJPEG frame
-        # --------------------------------------------------------
-
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n"
@@ -463,16 +355,8 @@ def generate_video_stream():
             + b"\r\n"
         )
 
-        # --------------------------------------------------------
-        # Control stream rate
-        # --------------------------------------------------------
-
         time.sleep(0.03)
 
-
-# ================================================================
-# VIDEO STREAM ENDPOINT
-# ================================================================
 
 @app.get("/video/stream")
 def video_stream():
