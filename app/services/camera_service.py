@@ -225,7 +225,7 @@ class CameraService:
                 self.fps,
                 2
             ),
-            "objects_detected": (
+            "objects_detected":(
                 self.objects_detected
             )
         }
